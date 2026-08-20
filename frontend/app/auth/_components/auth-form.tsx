@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { loginUser, registerUser } from "../_lib/auth-api";
 
@@ -12,7 +13,6 @@ const roleOptions = [
   "REAL_ESTATE_AGENT",
   "LEGAL_REVIEWER",
   "FINANCIAL_INSTITUTION",
-  "ADMINISTRATOR",
 ];
 
 const formatRoleLabel = (role: string) =>
@@ -23,6 +23,7 @@ const formatRoleLabel = (role: string) =>
     .join(" ");
 
 export function AuthForm({ mode }: AuthFormProps) {
+  const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [formData, setFormData] = useState({
@@ -49,7 +50,8 @@ export function AuthForm({ mode }: AuthFormProps) {
         });
 
         localStorage.setItem("authToken", response.token);
-        setMessage("Login successful. Dashboard routing can use this token next.");
+        localStorage.setItem("authUser", JSON.stringify(response));
+        router.push("/");
         return;
       }
 
