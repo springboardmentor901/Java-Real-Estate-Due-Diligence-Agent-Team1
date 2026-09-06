@@ -1,9 +1,13 @@
 package com.realestate.due_diligence_agent.service;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.realestate.due_diligence_agent.dto.AuthResponse;
 import com.realestate.due_diligence_agent.dto.LoginRequest;
+import com.realestate.due_diligence_agent.dto.RegisterRequest;
+import com.realestate.due_diligence_agent.dto.RegisterResponse;
+import com.realestate.due_diligence_agent.entity.Role;
 import com.realestate.due_diligence_agent.entity.User;
 import com.realestate.due_diligence_agent.repository.UserRepository;
 import com.realestate.due_diligence_agent.security.JwtService;
@@ -18,7 +22,35 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
-    
+    public RegisterResponse register(RegisterRequest request) {
+
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new RuntimeException("Email already registered");
+        }
+
+        if (request.getRole() == Role.ADMINISTRATOR) {
+            throw new RuntimeException(
+                    "Administrator accounts cannot be self-registered"
+            );
+        }
+
+        User user = User.builder()
+                .fullName(request.getFullName())
+                .email(request.getEmail())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .role(request.getRole())
+                .createdAt(java.time.LocalDateTime.now())
+                .build();
+
+        User savedUser = userRepository.save(user);
+
+        return RegisterResponse.builder()
+                .id(savedUser.getId())
+                .fullName(savedUser.getFullName())
+                .email(savedUser.getEmail())
+                .role(savedUser.getRole())
+                .build();
+    }
 
     public AuthResponse login(LoginRequest request) {
 

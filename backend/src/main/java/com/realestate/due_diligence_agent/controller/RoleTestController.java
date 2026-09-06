@@ -1,13 +1,33 @@
 package com.realestate.due_diligence_agent.controller;
-
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.realestate.due_diligence_agent.service.AttomService;
+import com.realestate.due_diligence_agent.service.RegridService;
 @RestController
 @RequestMapping("/api/test")
 public class RoleTestController {
+    private final AttomService attomService;
+    private final RegridService regridService;
+
+public RoleTestController(AttomService attomService,RegridService regridService) {
+    this.attomService = attomService;
+    this.regridService = regridService;
+}
+@GetMapping("/regrid/parcel")
+public Object regridParcel(
+        @RequestParam double latitude,
+        @RequestParam double longitude) {
+
+    return regridService.getParcelData(latitude, longitude);
+}
+@GetMapping("/attom/basicprofile")
+public Object attomBasicProfile(@RequestParam String address) {
+    return attomService.getBasicProfile(address);
+}
 
     @GetMapping("/admin-only")
     @PreAuthorize("hasRole('ADMINISTRATOR')")

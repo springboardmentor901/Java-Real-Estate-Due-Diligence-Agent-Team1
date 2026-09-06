@@ -1,0 +1,12 @@
+{
+  "features": [
+    {
+      "attributes": {
+        "FLD_ZONE": "AE",
+        "ZONE_SUBTY": "AREA OF SPECIAL FLOOD HAZARD",
+        "SFHA_TF": "T",
+        "STATIC_BFE": "10.0"
+      }
+    }
+  ]
+}
