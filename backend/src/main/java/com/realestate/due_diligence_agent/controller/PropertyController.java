@@ -4,6 +4,7 @@ import com.realestate.due_diligence_agent.client.GeocodingClient;
 import com.realestate.due_diligence_agent.dto.AddressValidationRequest;
 import com.realestate.due_diligence_agent.dto.AddressValidationResponse;
 import com.realestate.due_diligence_agent.entity.Property;
+import com.realestate.due_diligence_agent.entity.PropertyHistory;
 import com.realestate.due_diligence_agent.service.PropertyService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -36,6 +37,16 @@ public class PropertyController {
 
         return propertyService.searchByAddress(address);
     }
+
+
+    @GetMapping("/{id}/history")
+    public List<PropertyHistory> getPropertyHistory(
+            @PathVariable Long id) {
+
+        return propertyService.getPropertyHistory(id);
+    }
+
+
     @PostMapping("/validate_address")
     public AddressValidationResponse validateAddress(
             @Valid @RequestBody AddressValidationRequest request) {
@@ -43,5 +54,6 @@ public class PropertyController {
         return geocodingClient.validateAddress(request.getAddress());
     }
 
-    
+
+
 }
