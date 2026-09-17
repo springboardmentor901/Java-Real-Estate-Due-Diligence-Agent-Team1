@@ -24,6 +24,12 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import java.util.Arrays;
+import java.util.List;
+
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -42,19 +48,22 @@ public class SecurityConfig {
     }
 
     @Bean
+<<<<<<< Updated upstream
     public DaoAuthenticationProvider authenticationProvider() {
 
+=======
+    public AuthenticationProvider authenticationProvider() {
+>>>>>>> Stashed changes
         DaoAuthenticationProvider provider =
                 new DaoAuthenticationProvider(userDetailsService);
-
         provider.setPasswordEncoder(passwordEncoder());
-
         return provider;
     }
 
 
     @Bean
     public AuthenticationManager authenticationManager(
+<<<<<<< Updated upstream
             AuthenticationConfiguration config) throws Exception {
 
         return config.getAuthenticationManager();
@@ -67,17 +76,51 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
+=======
+            AuthenticationConfiguration configuration)
+            throws Exception {
+        return configuration.getAuthenticationManager();
+    }
+
+    @Bean
+    CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        configuration.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http)
+            throws Exception {
+
+        http
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .csrf(csrf -> csrf.disable())
+>>>>>>> Stashed changes
 
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(
                                 SessionCreationPolicy.STATELESS))
 
+<<<<<<< Updated upstream
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMINISTRATOR")
                         .anyRequest().authenticated())
 
                 .authenticationProvider(authenticationProvider())
+=======
+           .authorizeHttpRequests(auth -> auth
+    .dispatcherTypeMatchers(
+        DispatcherType.ASYNC
+    ).permitAll()
+>>>>>>> Stashed changes
 
                 .addFilterBefore(jwtAuthFilter,
                         UsernamePasswordAuthenticationFilter.class);
