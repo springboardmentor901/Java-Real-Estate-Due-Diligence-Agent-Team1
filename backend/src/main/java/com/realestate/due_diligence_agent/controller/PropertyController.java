@@ -70,6 +70,25 @@ public class PropertyController {
 
 
     // =========================================================
+    // SEARCH PROPERTIES
+    // =========================================================
+
+    @GetMapping("/search")
+    public List<Property> searchProperties(
+            @RequestParam(value = "address", required = false) String address,
+            @RequestParam(value = "query", required = false) String query) {
+
+        String searchTerm = (address != null && !address.isBlank()) ? address : query;
+
+        if (searchTerm == null || searchTerm.isBlank()) {
+            return List.of();
+        }
+
+        return propertyService.searchProperties(searchTerm.trim());
+    }
+
+
+    // =========================================================
     // GET PROPERTY BY ID
     // =========================================================
 

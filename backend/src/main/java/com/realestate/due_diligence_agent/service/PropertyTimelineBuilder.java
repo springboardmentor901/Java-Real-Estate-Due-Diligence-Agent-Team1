@@ -12,9 +12,19 @@ import com.realestate.due_diligence_agent.entity.OwnershipRecord;
 import com.realestate.due_diligence_agent.entity.Permit;
 import com.realestate.due_diligence_agent.entity.Property;
 import com.realestate.due_diligence_agent.entity.TaxHistory;
+import com.realestate.due_diligence_agent.repository.OwnershipRecordRepository;
+import com.realestate.due_diligence_agent.repository.PermitRepository;
+import com.realestate.due_diligence_agent.repository.TaxHistoryRepository;
+
+import lombok.RequiredArgsConstructor;
 
 @Service
+@RequiredArgsConstructor
 public class PropertyTimelineBuilder {
+
+    private final OwnershipRecordRepository ownershipRecordRepository;
+    private final TaxHistoryRepository taxHistoryRepository;
+    private final PermitRepository permitRepository;
 
     public List<PropertyTimelineEntry> build(Property property) {
 
@@ -39,6 +49,12 @@ public class PropertyTimelineBuilder {
             List<PropertyTimelineEntry> timeline) {
 
         List<OwnershipRecord> records = property.getOwnershipRecords();
+
+        if (records == null || records.isEmpty()) {
+            if (property.getId() != null) {
+                records = ownershipRecordRepository.findByPropertyId(property.getId());
+            }
+        }
 
         if (records == null) {
             return;
@@ -78,6 +94,12 @@ public class PropertyTimelineBuilder {
 
         List<TaxHistory> taxHistories = property.getTaxHistories();
 
+        if (taxHistories == null || taxHistories.isEmpty()) {
+            if (property.getId() != null) {
+                taxHistories = taxHistoryRepository.findByPropertyId(property.getId());
+            }
+        }
+
         if (taxHistories == null) {
             return;
         }
@@ -114,6 +136,12 @@ public class PropertyTimelineBuilder {
             List<PropertyTimelineEntry> timeline) {
 
         List<Permit> permits = property.getPermits();
+
+        if (permits == null || permits.isEmpty()) {
+            if (property.getId() != null) {
+                permits = permitRepository.findByPropertyId(property.getId());
+            }
+        }
 
         if (permits == null) {
             return;

@@ -61,6 +61,53 @@ public class GeocodingService {
         return results[0];
     }
 
+    public java.util.List<GeocodingResult> searchLocations(String address, int limit) {
+
+        try {
+
+            URI uri = UriComponentsBuilder
+                    .fromUriString("https://nominatim.openstreetmap.org/search")
+                    .queryParam("q", address)
+                    .queryParam("format", "json")
+                    .queryParam("limit", Math.max(1, limit))
+                    .build()
+                    .encode()
+                    .toUri();
+
+            HttpHeaders headers = new HttpHeaders();
+
+            headers.set(
+                    HttpHeaders.USER_AGENT,
+                    "DueDiligenceAgent/1.0 (real-estate-due-diligence)"
+            );
+
+            RequestEntity<Void> request =
+                    new RequestEntity<>(
+                            headers,
+                            HttpMethod.GET,
+                            uri
+                    );
+
+            ResponseEntity<GeocodingResult[]> response =
+                    restTemplate.exchange(
+                            request,
+                            GeocodingResult[].class
+                    );
+
+            GeocodingResult[] results = response.getBody();
+
+            if (results == null || results.length == 0) {
+                return java.util.Collections.emptyList();
+            }
+
+            return java.util.Arrays.asList(results);
+
+        } catch (Exception exception) {
+
+            return java.util.Collections.emptyList();
+        }
+    }
+
     public static class GeocodingResult {
 
         private String lat;

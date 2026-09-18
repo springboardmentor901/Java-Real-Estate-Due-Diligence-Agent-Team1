@@ -19,117 +19,98 @@ public class PropertyDetailsService {
 
     public Property getPropertyDetails(Long id) {
 
-        return propertyRepository.findById(id)
-                .orElseThrow(() ->
-                        new PropertyNotFoundException(
-                                "Property not found with id: " + id
-                        ));
-    }
-
-    @Transactional
-    public Property fetchAndSaveBasicProfile(Long id) {
-
-        // 1. Get property from database
         Property property = propertyRepository.findById(id)
                 .orElseThrow(() ->
                         new PropertyNotFoundException(
                                 "Property not found with id: " + id
                         ));
 
-        // 2. Call ATTOM Basic Profile
-        JsonNode response =
-                attomService.getBasicProfile(property.getAddress());
-
-        // 3. Validate ATTOM response
-        if (response == null ||
-                response.get("property") == null ||
-                !response.get("property").isArray() ||
-                response.get("property").isEmpty()) {
-
-            throw new RuntimeException(
-                    "No property data found from ATTOM for address: "
-                            + property.getAddress()
-            );
+        if (property.getBedrooms() == null && property.getSquareFeet() == null && property.getYearBuilt() == null && property.getPropertyType() == null) {
+            try {
+                Property enriched = enrichPropertyFromExternal(property);
+                if (enriched.getBedrooms() != null || enriched.getPropertyType() != null || enriched.getSquareFeet() != null) {
+                    property = propertyRepository.save(enriched);
+                }
+            } catch (Exception ignored) {}
         }
 
-        JsonNode attomProperty =
-                response.get("property").get(0);
+        return property;
+    }
 
-        // 4. Property summary
-        JsonNode summary =
-                attomProperty.get("summary");
-
-        if (summary != null) {
-
-            if (summary.get("propertyType") != null) {
-                property.setPropertyType(
-                        summary.get("propertyType").asText()
-                );
-            }
-
-            if (summary.get("yearBuilt") != null) {
-                property.setYearBuilt(
-                        summary.get("yearBuilt").asInt()
-                );
-            }
+    public Property enrichPropertyFromExternal(Property property) {
+        if (property == null || property.getAddress() == null || property.getAddress().isBlank()) {
+            return property;
         }
 
-        // 5. Building information
-        JsonNode building =
-                attomProperty.get("building");
+        try {
+            JsonNode response = attomService.getBasicProfile(property.getAddress());
 
-        if (building != null) {
+            if (response != null &&
+                    response.get("property") != null &&
+                    response.get("property").isArray() &&
+                    !response.get("property").isEmpty()) {
 
-            JsonNode rooms =
-                    building.get("rooms");
+                JsonNode attomProperty = response.get("property").get(0);
 
-            if (rooms != null) {
-
-                if (rooms.get("beds") != null) {
-                    property.setBedrooms(
-                            rooms.get("beds").asInt()
-                    );
+                // Summary
+                JsonNode summary = attomProperty.get("summary");
+                if (summary != null) {
+                    if (summary.get("propertyType") != null && !summary.get("propertyType").asText().isBlank()) {
+                        property.setPropertyType(summary.get("propertyType").asText());
+                    }
+                    if (summary.get("yearBuilt") != null) {
+                        property.setYearBuilt(summary.get("yearBuilt").asInt());
+                    }
                 }
 
-                if (rooms.get("bathsTotal") != null) {
-                    property.setBathrooms(
-                            rooms.get("bathsTotal").asDouble()
-                    );
+                // Building
+                JsonNode building = attomProperty.get("building");
+                if (building != null) {
+                    JsonNode rooms = building.get("rooms");
+                    if (rooms != null) {
+                        if (rooms.get("beds") != null) {
+                            property.setBedrooms(rooms.get("beds").asInt());
+                        }
+                        if (rooms.get("bathsTotal") != null) {
+                            property.setBathrooms(rooms.get("bathsTotal").asDouble());
+                        }
+                    }
+
+                    JsonNode size = building.get("size");
+                    if (size != null && size.get("livingSize") != null) {
+                        property.setSquareFeet(size.get("livingSize").asDouble());
+                    }
+                }
+
+                // Location
+                JsonNode location = attomProperty.get("location");
+                if (location != null) {
+                    if (location.get("latitude") != null && (property.getLatitude() == null || property.getLatitude() == 0.0)) {
+                        property.setLatitude(location.get("latitude").asDouble());
+                    }
+                    if (location.get("longitude") != null && (property.getLongitude() == null || property.getLongitude() == 0.0)) {
+                        property.setLongitude(location.get("longitude").asDouble());
+                    }
                 }
             }
-
-            JsonNode size =
-                    building.get("size");
-
-            if (size != null &&
-                    size.get("livingSize") != null) {
-
-                property.setSquareFeet(
-                        size.get("livingSize").asDouble()
-                );
-            }
+        } catch (Exception exception) {
+            // External property aggregator unavailable or address not found/unsupported (e.g. international)
+            // Fields remain null so application correctly displays N/A without failing
         }
 
-        // 6. Location
-        JsonNode location =
-                attomProperty.get("location");
+        return property;
+    }
 
-        if (location != null) {
+    @Transactional
+    public Property fetchAndSaveBasicProfile(Long id) {
 
-            if (location.get("latitude") != null) {
-                property.setLatitude(
-                        location.get("latitude").asDouble()
-                );
-            }
+        Property property = propertyRepository.findById(id)
+                .orElseThrow(() ->
+                        new PropertyNotFoundException(
+                                "Property not found with id: " + id
+                        ));
 
-            if (location.get("longitude") != null) {
-                property.setLongitude(
-                        location.get("longitude").asDouble()
-                );
-            }
-        }
-
-        // 7. Save updated property
+        enrichPropertyFromExternal(property);
         return propertyRepository.save(property);
     }
 }

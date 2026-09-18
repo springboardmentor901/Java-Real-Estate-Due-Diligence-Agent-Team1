@@ -29,7 +29,7 @@ public class TaxHistoryService {
         this.attomService = attomService;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = Exception.class)
     public List<TaxHistory> getTaxHistory(Long propertyId) {
 
         // 1. Check whether tax data already exists

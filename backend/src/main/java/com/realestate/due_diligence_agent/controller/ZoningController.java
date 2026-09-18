@@ -44,4 +44,25 @@ public class ZoningController {
 
         return ResponseEntity.ok(zoningInformation);
     }
+
+    @org.springframework.web.bind.annotation.PostMapping("/{id}/zoning/refresh")
+    public ResponseEntity<?> refreshZoning(
+            @PathVariable Long id) {
+
+        ZoningInformation zoningInformation =
+                zoningService.refreshZoningInformation(id);
+
+        if (zoningInformation == null) {
+
+            return ResponseEntity.ok(
+                    java.util.Map.of(
+                            "propertyId", id,
+                            "message",
+                            "No zoning information found from Regrid for this property"
+                    )
+            );
+        }
+
+        return ResponseEntity.ok(zoningInformation);
+    }
 }

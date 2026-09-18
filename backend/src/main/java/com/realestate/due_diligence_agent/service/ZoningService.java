@@ -1,5 +1,7 @@
 package com.realestate.due_diligence_agent.service;
 
+import java.time.LocalDateTime;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,11 +54,31 @@ public class ZoningService {
         // 2. Check database first
         // =====================================================
 
-        if (property.getZoningInformation() != null) {
+        if (property.getZoningInformation() != null
+                && property.getZoningInformation().getLandUse() != null
+                && property.getZoningInformation().getZoningClassification() != null) {
 
             return property.getZoningInformation();
         }
 
+        return fetchAndSaveZoningInformation(property);
+    }
+
+    @Transactional
+    public ZoningInformation refreshZoningInformation(Long propertyId) {
+
+        Property property = propertyRepository.findById(propertyId)
+                .orElseThrow(() ->
+                        new PropertyNotFoundException(
+                                "Property not found with id: "
+                                        + propertyId
+                        )
+                );
+
+        return fetchAndSaveZoningInformation(property);
+    }
+
+    private ZoningInformation fetchAndSaveZoningInformation(Property property) {
 
         // =====================================================
         // 3. Validate coordinates
@@ -152,17 +174,27 @@ public class ZoningService {
 
 
         // =====================================================
-        // 10. Create zoning entity
+        // 10. Create or update zoning entity
         // =====================================================
 
-        ZoningInformation zoningInformation =
-                ZoningInformation.builder()
-                        .property(property)
-                        .zoningCode(fields.getZoning())
-                        .zoningDescription(
-                                fields.getZoningDescription()
-                        )
-                        .build();
+        ZoningInformation zoningInformation = property.getZoningInformation();
+
+        if (zoningInformation == null) {
+            zoningInformation = ZoningInformation.builder()
+                    .property(property)
+                    .zoningCode(fields.getZoning())
+                    .zoningDescription(fields.getZoningDescription())
+                    .landUse(fields.getUsedesc())
+                    .zoningClassification(fields.getZoningType())
+                    .retrievedAt(LocalDateTime.now())
+                    .build();
+        } else {
+            zoningInformation.setZoningCode(fields.getZoning());
+            zoningInformation.setZoningDescription(fields.getZoningDescription());
+            zoningInformation.setLandUse(fields.getUsedesc());
+            zoningInformation.setZoningClassification(fields.getZoningType());
+            zoningInformation.setRetrievedAt(LocalDateTime.now());
+        }
 
 
         // =====================================================
