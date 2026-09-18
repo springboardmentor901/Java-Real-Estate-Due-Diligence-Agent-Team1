@@ -30,14 +30,15 @@ public class RiskAssessmentController {
 
         return ResponseEntity.ok(assessment);
     }
+
     @PostMapping("/{id}/risk-assessment/overall")
-public ResponseEntity<Report> calculateOverallRisk(
-        @PathVariable Long id,
-        @RequestParam Long reportId) {
+    public ResponseEntity<Report> calculateOverallRisk(
+            @PathVariable Long id,
+            @RequestParam Long reportId) {
 
-    Report report =
-            riskAssessmentService.calculateOverallRisk(id, reportId);
+        Report report =
+                riskAssessmentService.calculateOverallRisk(id, reportId);
 
-    return ResponseEntity.ok(report);
-}
+        return ResponseEntity.ok(report);
+    }
 }
