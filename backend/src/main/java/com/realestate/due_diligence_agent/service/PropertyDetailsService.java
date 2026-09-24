@@ -25,7 +25,7 @@ public class PropertyDetailsService {
                                 "Property not found with id: " + id
                         ));
 
-        if (property.getBedrooms() == null && property.getSquareFeet() == null && property.getYearBuilt() == null && property.getPropertyType() == null) {
+        if (property.getBedrooms() == null && property.getSquareFeet() == null && property.getYearBuilt() == null) {
             try {
                 Property enriched = enrichPropertyFromExternal(property);
                 if (enriched.getBedrooms() != null || enriched.getPropertyType() != null || enriched.getSquareFeet() != null) {

@@ -48,12 +48,12 @@ public class PropertyTimelineBuilder {
             Property property,
             List<PropertyTimelineEntry> timeline) {
 
-        List<OwnershipRecord> records = property.getOwnershipRecords();
-
+        List<OwnershipRecord> records = null;
+        if (property.getId() != null) {
+            records = ownershipRecordRepository.findByPropertyId(property.getId());
+        }
         if (records == null || records.isEmpty()) {
-            if (property.getId() != null) {
-                records = ownershipRecordRepository.findByPropertyId(property.getId());
-            }
+            records = property.getOwnershipRecords();
         }
 
         if (records == null) {

@@ -29,8 +29,15 @@ public class OwnershipService {
         List<OwnershipRecord> existingRecords =
                 ownershipRecordRepository.findByPropertyId(propertyId);
 
-        // If data already exists, return it
+        // If data already exists, return it (or refresh if acquisitionDate is null)
         if (!existingRecords.isEmpty()) {
+            boolean hasMissingDate = existingRecords.stream().anyMatch(r -> r.getAcquisitionDate() == null);
+            if (hasMissingDate) {
+                try {
+                    OwnershipRecord updated = propertyDataService.fetchAndSaveOwnership(propertyId);
+                    return List.of(updated);
+                } catch (Exception ignored) {}
+            }
             return existingRecords;
         }
 

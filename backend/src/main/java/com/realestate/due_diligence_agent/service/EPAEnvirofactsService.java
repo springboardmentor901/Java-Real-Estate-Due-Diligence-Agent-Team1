@@ -13,6 +13,7 @@ import tools.jackson.databind.ObjectMapper;
 public class EPAEnvirofactsService {
 
     private final WebClient webClient;
+    private final WebClient echoWebClient;
     private final ObjectMapper objectMapper;
 
     public EPAEnvirofactsService(
@@ -26,6 +27,10 @@ public class EPAEnvirofactsService {
 
         this.webClient = webClientBuilder
                 .baseUrl(baseUrl)
+                .build();
+
+        this.echoWebClient = webClientBuilder
+                .baseUrl("https://echodata.epa.gov/echo")
                 .build();
     }
 
@@ -318,6 +323,64 @@ public JsonNode searchFacilitiesPage(
                     "EPA Envirofacts coordinate search service is currently unavailable",
                     exception
             );
+        }
+    }
+
+    // =========================================================
+    // SEARCH EPA ECHO BY COORDINATES (Fallback)
+    // =========================================================
+
+    public JsonNode searchEchoFacilitiesByCoordinates(
+            double latitude,
+            double longitude,
+            double searchRadiusMiles) {
+
+        try {
+            // 1. Initial facility query to obtain QueryID
+            String rawSummary = echoWebClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/echo_rest_services.get_facilities")
+                            .queryParam("p_lat", latitude)
+                            .queryParam("p_long", longitude)
+                            .queryParam("p_radius", searchRadiusMiles)
+                            .queryParam("output", "JSON")
+                            .build())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (rawSummary == null || rawSummary.isBlank()) {
+                return null;
+            }
+
+            JsonNode summaryNode = objectMapper.readTree(rawSummary);
+            JsonNode results = summaryNode.path("Results");
+            String qid = results.path("QueryID").asText(null);
+
+            if (qid == null || qid.isBlank()) {
+                return null;
+            }
+
+            // 2. Fetch facilities using QueryID
+            String rawFacilities = echoWebClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/echo_rest_services.get_qid")
+                            .queryParam("qid", qid)
+                            .queryParam("output", "JSON")
+                            .build())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (rawFacilities == null || rawFacilities.isBlank()) {
+                return null;
+            }
+
+            return objectMapper.readTree(rawFacilities);
+
+        } catch (Exception exception) {
+            System.err.println("EPA ECHO query error: " + exception.getMessage());
+            return null;
         }
     }
 }

@@ -10,6 +10,11 @@ import com.realestate.due_diligence_agent.exception.PropertyNotFoundException;
 import com.realestate.due_diligence_agent.repository.OwnershipRecordRepository;
 import com.realestate.due_diligence_agent.repository.PropertyRepository;
 
+import java.time.LocalDate;
+import java.util.List;
+
+import tools.jackson.databind.JsonNode;
+
 @Service
 public class PropertyDataService {
 
@@ -36,7 +41,7 @@ public class PropertyDataService {
                         new PropertyNotFoundException(
                                 "Property not found with id: " + propertyId));
 
-        // 2. Call ATTOM
+        // 2. Call ATTOM Detail Owner
         AttomOwnerResponse response =
                 attomService.getDetailOwner(property.getAddress());
 
@@ -71,17 +76,59 @@ public class PropertyDataService {
                 attomProperty.getOwner()
                         .getOwnerrelationshiprightscode();
 
-        // 6. Create database entity
-        OwnershipRecord ownershipRecord =
-                OwnershipRecord.builder()
-                        .property(property)
-                        .ownerName(ownerName)
-                        .ownershipType(ownershipType)
-                        .acquisitionDate(null)
-                        .paymentStatus(null)
-                        .build();
+        // 6. Extract acquisition/sale date from ATTOM Basic Profile
+        LocalDate acquisitionDate = null;
+        try {
+            JsonNode basicProfile = attomService.getBasicProfile(property.getAddress());
+            if (basicProfile != null && basicProfile.hasNonNull("property")
+                    && basicProfile.get("property").isArray()
+                    && !basicProfile.get("property").isEmpty()) {
 
-        // 7. Save to PostgreSQL
+                JsonNode propNode = basicProfile.get("property").get(0);
+                JsonNode saleNode = propNode.get("sale");
+                if (saleNode != null && !saleNode.isNull()) {
+                    String dateStr = null;
+                    if (saleNode.hasNonNull("saleTransDate") && !saleNode.get("saleTransDate").asText().isBlank()) {
+                        dateStr = saleNode.get("saleTransDate").asText().trim();
+                    } else if (saleNode.hasNonNull("saleAmountData")
+                            && saleNode.get("saleAmountData").hasNonNull("saleRecDate")
+                            && !saleNode.get("saleAmountData").get("saleRecDate").asText().isBlank()) {
+                        dateStr = saleNode.get("saleAmountData").get("saleRecDate").asText().trim();
+                    }
+
+                    if (dateStr != null && !dateStr.isEmpty()) {
+                        try {
+                            String cleanDate = dateStr.length() >= 10 ? dateStr.substring(0, 10) : dateStr;
+                            acquisitionDate = LocalDate.parse(cleanDate);
+                        } catch (Exception ignored) {
+                            // Leave null if date is unparseable
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Failed to retrieve or parse basic profile sale date, acquisitionDate remains null
+        }
+
+        // 7. Find existing or create new OwnershipRecord
+        List<OwnershipRecord> existingList = ownershipRecordRepository.findByPropertyId(propertyId);
+        OwnershipRecord ownershipRecord;
+        if (!existingList.isEmpty()) {
+            ownershipRecord = existingList.get(0);
+            ownershipRecord.setOwnerName(ownerName);
+            ownershipRecord.setOwnershipType(ownershipType);
+            ownershipRecord.setAcquisitionDate(acquisitionDate);
+        } else {
+            ownershipRecord = OwnershipRecord.builder()
+                    .property(property)
+                    .ownerName(ownerName)
+                    .ownershipType(ownershipType)
+                    .acquisitionDate(acquisitionDate)
+                    .paymentStatus(null)
+                    .build();
+        }
+
+        // 8. Save to PostgreSQL
         return ownershipRecordRepository.save(ownershipRecord);
     }
 }

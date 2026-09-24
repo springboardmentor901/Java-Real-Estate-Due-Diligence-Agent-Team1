@@ -97,11 +97,23 @@ public class EnvironmentalService {
 
 
         // -----------------------------------------------------
-        // 4. PARSE ADDRESS
+        // 4. PARSE & VALIDATE ADDRESS
         // -----------------------------------------------------
 
-        AddressParts addressParts =
-                parseAddress(property.getAddress());
+        com.realestate.due_diligence_agent.util.AddressParser parser =
+                com.realestate.due_diligence_agent.util.AddressParser.parse(property.getAddress());
+
+        boolean isUs = parser.isUsAddress() ||
+                (property.getLatitude() != null && property.getLongitude() != null
+                        && property.getLatitude() >= 18.0 && property.getLatitude() <= 72.0
+                        && property.getLongitude() >= -175.0 && property.getLongitude() <= -65.0);
+
+        if (!isUs) {
+            System.out.println("Property is outside US. EPA coverage not applicable: " + property.getAddress());
+            return new ArrayList<>();
+        }
+
+        AddressParts addressParts = parseAddress(property.getAddress());
 
         System.out.println(
                 "EPA search address: "
@@ -119,105 +131,81 @@ public class EnvironmentalService {
         // 5. SEARCH EPA FRS BY EXACT ADDRESS
         // -----------------------------------------------------
 
-        JsonNode response =
-                epaService.searchFacilities(
-                        addressParts.streetAddress,
-                        addressParts.city,
-                        addressParts.state,
-                        addressParts.zipCode,
-                        null
-                );
+        List<EnvironmentalRecord> records = new ArrayList<>();
 
+        try {
+            JsonNode response = epaService.searchFacilities(
+                    addressParts.streetAddress,
+                    addressParts.city,
+                    addressParts.state,
+                    addressParts.zipCode,
+                    null
+            );
 
-        // -----------------------------------------------------
-        // DEBUG EPA ADDRESS RESPONSE
-        // -----------------------------------------------------
-
-        System.out.println(
-                "========== EPA ADDRESS RESPONSE =========="
-        );
-
-        System.out.println(response);
+            mapResponse(response, property, records);
+        } catch (Exception e) {
+            System.err.println("EPA FRS address search unavailable: " + e.getMessage());
+        }
 
         System.out.println(
-                "=========================================="
+                "Environmental records mapped from address search: " + records.size()
         );
 
 
         // -----------------------------------------------------
-        // 6. MAP ADDRESS RESULTS
-        // -----------------------------------------------------
-
-        List<EnvironmentalRecord> records =
-                new ArrayList<>();
-
-        mapResponse(
-                response,
-                property,
-                records
-        );
-
-
-        System.out.println(
-                "Environmental records mapped from "
-                        + "address search: "
-                        + records.size()
-        );
-
-
-        // -----------------------------------------------------
-        // 7. FALLBACK TO COORDINATE SEARCH
+        // 7. FALLBACK TO COORDINATE SEARCH (FRS)
         // -----------------------------------------------------
 
         if (records.isEmpty() &&
                 property.getLatitude() != null &&
                 property.getLongitude() != null) {
 
-            System.out.println(
-                    "No exact-address environmental records "
-                            + "found. Trying coordinate search..."
-            );
+            System.out.println("Trying FRS coordinate search...");
 
+            try {
+                JsonNode coordinateResponse = epaService.searchFacilitiesByCoordinates(
+                        property.getLatitude(),
+                        property.getLongitude(),
+                        0.1,
+                        null
+                );
 
-            JsonNode coordinateResponse =
-                    epaService.searchFacilitiesByCoordinates(
-                            property.getLatitude(),
-                            property.getLongitude(),
-                            0.1,
-                            null
-                    );
-
-
-            // -------------------------------------------------
-            // DEBUG COORDINATE RESPONSE
-            // -------------------------------------------------
+                mapResponse(coordinateResponse, property, records);
+            } catch (Exception e) {
+                System.err.println("EPA FRS coordinate search unavailable: " + e.getMessage());
+            }
 
             System.out.println(
-                    "========== EPA COORDINATE RESPONSE =========="
+                    "Environmental records mapped from FRS coordinate search: " + records.size()
             );
+        }
 
-            System.out.println(coordinateResponse);
+
+        // -----------------------------------------------------
+        // 7b. FALLBACK TO EPA ECHO (Live active official service)
+        // -----------------------------------------------------
+
+        if (records.isEmpty() &&
+                property.getLatitude() != null &&
+                property.getLongitude() != null) {
+
+            System.out.println("Trying EPA ECHO search for coordinates ("
+                    + property.getLatitude() + ", " + property.getLongitude() + ")...");
+
+            try {
+                JsonNode echoResponse = epaService.searchEchoFacilitiesByCoordinates(
+                        property.getLatitude(),
+                        property.getLongitude(),
+                        0.5
+                );
+
+                mapResponse(echoResponse, property, records);
+            } catch (Exception e) {
+                System.err.println("EPA ECHO search error: " + e.getMessage());
+            }
 
             System.out.println(
-                    "=============================================="
-            );
-
-
-            // -------------------------------------------------
-            // MAP COORDINATE RESULTS
-            // -------------------------------------------------
-
-            mapResponse(
-                    coordinateResponse,
-                    property,
-                    records
-            );
-
-
-            System.out.println(
-                    "Environmental records mapped from "
-                            + "coordinate search: "
-                            + records.size()
+                    "Environmental records mapped from EPA ECHO search: " + records.size()
             );
         }
 
@@ -313,22 +301,24 @@ public class EnvironmentalService {
         JsonNode facilities =
                 results.path("FRSFacility");
 
-
-        if (!facilities.isArray()) {
+        if (facilities.isArray() && facilities.size() > 0) {
+            System.out.println(
+                    "EPA FRS facilities received: "
+                            + facilities.size()
+            );
+        } else {
+            JsonNode echoFacilities = results.path("Facilities");
+            if (echoFacilities.isArray() && echoFacilities.size() > 0) {
+                mapEchoFacilities(echoFacilities, property, records);
+                return;
+            }
 
             System.out.println(
-                    "EPA response does not contain "
-                            + "FRSFacility array."
+                    "EPA response does not contain FRSFacility or ECHO Facilities array."
             );
 
             return;
         }
-
-
-        System.out.println(
-                "EPA facilities received: "
-                        + facilities.size()
-        );
 
 
         // -----------------------------------------------------
@@ -492,6 +482,72 @@ public class EnvironmentalService {
                                 + facilityName
                 );
             }
+        }
+    }
+
+
+    // =========================================================
+    // MAP EPA ECHO FACILITIES
+    // =========================================================
+
+    private void mapEchoFacilities(
+            JsonNode facilities,
+            Property property,
+            List<EnvironmentalRecord> records) {
+
+        System.out.println("EPA ECHO facilities received: " + facilities.size());
+
+        int count = 0;
+        for (JsonNode facility : facilities) {
+            if (count >= 15) {
+                break;
+            }
+
+            String registryId = textValue(facility, "RegistryID");
+            String facilityName = textValue(facility, "FacName");
+            String street = textValue(facility, "FacStreet");
+            String city = textValue(facility, "FacCity");
+            String state = textValue(facility, "FacState");
+            String zip = textValue(facility, "FacZip");
+            String complianceStatus = textValue(facility, "FacComplianceStatus");
+            String rcraStatus = textValue(facility, "RCRAComplianceStatus");
+            String cwaStatus = textValue(facility, "CWAComplianceStatus");
+            String sncFlg = textValue(facility, "FacSNCFlg");
+
+            String recordType = "ECHO Facility";
+            if (rcraStatus != null && !rcraStatus.isBlank()) {
+                recordType = "RCRA";
+            } else if (cwaStatus != null && !cwaStatus.isBlank()) {
+                recordType = "CWA";
+            }
+
+            String severity = "LOW";
+            if ("Y".equalsIgnoreCase(sncFlg)) {
+                severity = "HIGH";
+            } else if (complianceStatus != null && (complianceStatus.contains("Violation") || complianceStatus.contains("Noncompliance"))) {
+                severity = "MEDIUM";
+            }
+
+            StringBuilder desc = new StringBuilder();
+            desc.append("Facility: ").append(facilityName != null ? facilityName : "Unknown");
+            if (street != null) desc.append(" | Address: ").append(street);
+            if (city != null) desc.append(" | City: ").append(city);
+            if (state != null) desc.append(" | State: ").append(state);
+            if (zip != null) desc.append(" | ZIP: ").append(zip);
+            if (registryId != null) desc.append(" | EPA Registry ID: ").append(registryId);
+            desc.append(" | Program: ").append(recordType);
+            if (complianceStatus != null) desc.append(" | Status: ").append(complianceStatus);
+
+            EnvironmentalRecord record = EnvironmentalRecord.builder()
+                    .property(property)
+                    .recordType(recordType)
+                    .description(desc.toString())
+                    .severity(severity)
+                    .source("EPA ECHO")
+                    .build();
+
+            records.add(record);
+            count++;
         }
     }
 

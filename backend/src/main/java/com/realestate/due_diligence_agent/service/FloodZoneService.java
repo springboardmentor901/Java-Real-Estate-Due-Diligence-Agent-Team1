@@ -108,63 +108,54 @@ public class FloodZoneService {
 
         String floodZone = null;
         String floodRiskRating = null;
+        String femaMapPanel = null;
 
         if (floodResponse != null &&
                 floodResponse.get("features") != null &&
-                floodResponse.get("features").isArray() &&
-                !floodResponse.get("features").isEmpty()) {
+                floodResponse.get("features").isArray()) {
 
-            JsonNode attributes =
-                    floodResponse
-                            .get("features")
-                            .get(0)
-                            .get("attributes");
+            if (!floodResponse.get("features").isEmpty()) {
+                JsonNode attributes =
+                        floodResponse
+                                .get("features")
+                                .get(0)
+                                .get("attributes");
 
-            if (attributes != null) {
+                if (attributes != null) {
+                    JsonNode floodZoneNode = attributes.get("FLD_ZONE");
+                    if (floodZoneNode != null && !floodZoneNode.isNull()) {
+                        floodZone = floodZoneNode.asText();
+                    }
 
-                JsonNode floodZoneNode =
-                        attributes.get("FLD_ZONE");
+                    JsonNode sfhaNode = attributes.get("SFHA_TF");
+                    if (sfhaNode != null && !sfhaNode.isNull()) {
+                        String sfha = sfhaNode.asText();
+                        if ("T".equalsIgnoreCase(sfha) || "Y".equalsIgnoreCase(sfha)) {
+                            floodRiskRating = "HIGH";
+                        } else if ("F".equalsIgnoreCase(sfha) || "N".equalsIgnoreCase(sfha)) {
+                            floodRiskRating = "LOW";
+                        }
+                    }
 
-                if (floodZoneNode != null &&
-                        !floodZoneNode.isNull()) {
-
-                    floodZone = floodZoneNode.asText();
-                }
-
-
-                // Use FEMA SFHA indicator as the initial risk
-                // classification for the ER field.
-                JsonNode sfhaNode =
-                        attributes.get("SFHA_TF");
-
-                if (sfhaNode != null &&
-                        !sfhaNode.isNull()) {
-
-                    String sfha =
-                            sfhaNode.asText();
-
-                    if ("T".equalsIgnoreCase(sfha) ||
-                            "Y".equalsIgnoreCase(sfha)) {
-
-                        floodRiskRating = "HIGH";
-
-                    } else if ("F".equalsIgnoreCase(sfha) ||
-                            "N".equalsIgnoreCase(sfha)) {
-
-                        floodRiskRating = "LOW";
+                    JsonNode dfirmNode = attributes.get("DFIRM_ID");
+                    if (dfirmNode != null && !dfirmNode.isNull()) {
+                        femaMapPanel = dfirmNode.asText();
                     }
                 }
+            } else if (femaService.isWithinUs(latitude, longitude)) {
+                // Per FEMA NFHL guidelines, areas outside Special Flood Hazard Areas (SFHA)
+                // are classified as Zone X (Area of Minimal Flood Hazard).
+                floodZone = "X";
+                floodRiskRating = "LOW";
+                femaMapPanel = "FEMA NFHL (Zone X - Area of Minimal Flood Hazard)";
             }
         }
 
-
         // =====================================================
-        // 8. EXTRACT FEMA FIRM PANEL
+        // 8. EXTRACT FEMA FIRM PANEL (If not already set)
         // =====================================================
 
-        String femaMapPanel = null;
-
-        if (panelResponse != null &&
+        if (femaMapPanel == null && panelResponse != null &&
                 panelResponse.get("features") != null &&
                 panelResponse.get("features").isArray() &&
                 !panelResponse.get("features").isEmpty()) {
@@ -176,49 +167,29 @@ public class FloodZoneService {
                             .get("attributes");
 
             if (attributes != null) {
-
-                // FEMA panel responses can contain several
-                // identifiers. Try the common panel fields.
-                JsonNode panelNode =
-                        attributes.get("FIRM_PAN");
-
-                if (panelNode == null ||
-                        panelNode.isNull()) {
-
-                    panelNode =
-                            attributes.get("FIRM_PAN_ID");
+                JsonNode panelNode = attributes.get("FIRM_PAN");
+                if (panelNode == null || panelNode.isNull()) {
+                    panelNode = attributes.get("FIRM_PAN_ID");
                 }
-
-                if (panelNode == null ||
-                        panelNode.isNull()) {
-
-                    panelNode =
-                            attributes.get("FIRM_ID");
+                if (panelNode == null || panelNode.isNull()) {
+                    panelNode = attributes.get("FIRM_ID");
                 }
-
-                if (panelNode != null &&
-                        !panelNode.isNull()) {
-
-                    femaMapPanel =
-                            panelNode.asText();
+                if (panelNode != null && !panelNode.isNull()) {
+                    femaMapPanel = panelNode.asText();
                 }
             }
         }
-
 
         // =====================================================
         // 9. VALIDATE FEMA RESULT
         // =====================================================
 
-        if (floodZone == null &&
-                femaMapPanel == null) {
-
+        if (floodZone == null && femaMapPanel == null) {
             throw new RuntimeException(
                     "No FEMA flood-zone information found for property: "
                             + property.getAddress()
             );
         }
-
 
         // =====================================================
         // 10. CREATE ENTITY
@@ -228,7 +199,7 @@ public class FloodZoneService {
                 FloodZoneData.builder()
                         .property(property)
                         .floodZone(floodZone)
-                        .floodRiskRating(floodRiskRating)
+                        .floodRiskRating(floodRiskRating != null ? floodRiskRating : "LOW")
                         .femaMapPanel(femaMapPanel)
                         .elevationData(
                                 elevation != null
@@ -237,7 +208,6 @@ public class FloodZoneService {
                         )
                         .retrievedAt(LocalDateTime.now())
                         .build();
-
 
         // =====================================================
         // 11. SAVE TO POSTGRESQL

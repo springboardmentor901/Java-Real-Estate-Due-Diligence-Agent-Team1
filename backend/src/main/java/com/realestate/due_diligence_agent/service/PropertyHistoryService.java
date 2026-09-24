@@ -14,11 +14,16 @@ public class PropertyHistoryService {
 
     private final PropertyService propertyService;
     private final PropertyTimelineBuilder propertyTimelineBuilder;
+    private final OwnershipService ownershipService;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<PropertyTimelineEntry> getPropertyHistory(Long propertyId) {
 
         Property property = propertyService.getPropertyById(propertyId);
+
+        try {
+            ownershipService.getOwnershipRecords(propertyId);
+        } catch (Exception ignored) {}
 
         return propertyTimelineBuilder.build(property);
     }

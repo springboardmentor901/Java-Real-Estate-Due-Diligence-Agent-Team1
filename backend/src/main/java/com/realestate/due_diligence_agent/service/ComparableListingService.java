@@ -12,6 +12,7 @@ import com.realestate.due_diligence_agent.entity.ComparableListing;
 import com.realestate.due_diligence_agent.entity.Property;
 import com.realestate.due_diligence_agent.repository.ComparableListingRepository;
 import com.realestate.due_diligence_agent.repository.PropertyRepository;
+import com.realestate.due_diligence_agent.util.AddressParser;
 import com.realestate.due_diligence_agent.util.DistanceCalculator;
 
 import lombok.RequiredArgsConstructor;
@@ -42,8 +43,11 @@ public class ComparableListingService {
 
         // Step 3: No saved comparables, so call RapidAPI
         String location = buildSearchLocation(property.getAddress());
+        if (location == null || location.isBlank()) {
+            return new ArrayList<>();
+        }
 
-        RapidApiListingResponse response = null;
+        tools.jackson.databind.JsonNode response = null;
         try {
             response = rapidApiListingClient.searchListings(location);
         } catch (Exception e) {
@@ -51,127 +55,95 @@ public class ComparableListingService {
             return new ArrayList<>();
         }
 
-        if (response == null) {
+        if (response == null || !response.hasNonNull("data") || !response.get("data").hasNonNull("results")) {
             return new ArrayList<>();
         }
 
-        // Step 4: Read the actual API structure:
-        // response -> data -> results
-        List<RapidApiListingResponse.Listing> listings =
-                response.getData() != null
-                        && response.getData().getResults() != null
-                        ? response.getData().getResults()
-                        : List.of();
-
-        if (listings.isEmpty()) {
+        tools.jackson.databind.JsonNode resultsNode = response.get("data").get("results");
+        if (!resultsNode.isArray() || resultsNode.isEmpty()) {
             return new ArrayList<>();
         }
 
         // Step 5: Convert API listings into ComparableListing entities
         List<ComparableListing> comparables = new ArrayList<>();
 
-        for (RapidApiListingResponse.Listing listing : listings) {
+        Double propertyLat = property.getLatitude();
+        Double propertyLon = property.getLongitude();
 
-            if (listing == null) {
+        for (tools.jackson.databind.JsonNode listing : resultsNode) {
+            if (listing == null || listing.isNull()) {
                 continue;
             }
 
             // Address
-            String comparableAddress = buildAddress(listing);
+            String comparableAddress = buildAddressFromJson(listing);
 
             // Price
-            Double price = listing.getListPrice();
-            // Square feet
-                Double squareFeet = null;
+            Double price = null;
+            if (listing.hasNonNull("list_price")) {
+                price = listing.get("list_price").asDouble();
+            } else if (listing.hasNonNull("last_sold_price")) {
+                price = listing.get("last_sold_price").asDouble();
+            }
 
-                if (listing.getDescription() != null) {
-                        squareFeet = listing.getDescription().getSqft().doubleValue();
-                }
+            // Square feet
+            Double squareFeet = null;
+            tools.jackson.databind.JsonNode desc = listing.get("description");
+            if (desc != null && desc.hasNonNull("sqft")) {
+                squareFeet = desc.get("sqft").asDouble();
+            }
 
             // Listed date
             LocalDateTime listedDate = null;
-
-            if (listing.getListDate() != null) {
-                listedDate = LocalDateTime.ofInstant(
-                        listing.getListDate(),
-                        java.time.ZoneId.systemDefault()
-                );
+            if (listing.hasNonNull("list_date")) {
+                String dateStr = listing.get("list_date").asText();
+                try {
+                    listedDate = LocalDateTime.ofInstant(
+                            java.time.Instant.parse(dateStr),
+                            java.time.ZoneId.systemDefault()
+                    );
+                } catch (Exception ignored) {
+                    try {
+                        listedDate = LocalDateTime.parse(dateStr);
+                    } catch (Exception ignored2) {}
+                }
             }
 
             // Source
             String source = null;
-
-            if (listing.getSource() != null) {
-                source = listing.getSource().getName();
+            tools.jackson.databind.JsonNode sourceNode = listing.get("source");
+            if (sourceNode != null && sourceNode.hasNonNull("name")) {
+                source = sourceNode.get("name").asText();
             }
 
             // Coordinates
             Double comparableLat = null;
             Double comparableLon = null;
-
-            if (listing.getLocation() != null
-                    && listing.getLocation().getAddress() != null
-                    && listing.getLocation().getAddress().getCoordinate() != null) {
-
-                comparableLat =
-                        listing.getLocation()
-                                .getAddress()
-                                .getCoordinate()
-                                .getLat();
-
-                comparableLon =
-                        listing.getLocation()
-                                .getAddress()
-                                .getCoordinate()
-                                .getLon();
-            }
-
-            // Property coordinates
-            Double propertyLat = null;
-            Double propertyLon = null;
-
-            /*
-             * This section assumes your Property entity contains
-             * latitude and longitude fields.
-             *
-             * If your Property entity uses different field names,
-             * we will adjust this after compilation.
-             */
-            try {
-                propertyLat = property.getLatitude();
-                propertyLon = property.getLongitude();
-            } catch (Exception ignored) {
-                // Leave distance as null if property coordinates
-                // are not available.
+            tools.jackson.databind.JsonNode coordNode = listing.path("location").path("address").path("coordinate");
+            if (coordNode != null && coordNode.hasNonNull("lat") && coordNode.hasNonNull("lon")) {
+                comparableLat = coordNode.get("lat").asDouble();
+                comparableLon = coordNode.get("lon").asDouble();
             }
 
             // Calculate distance
             Double distanceMiles = null;
-
-            if (propertyLat != null
-                    && propertyLon != null
-                    && comparableLat != null
-                    && comparableLon != null) {
-
+            if (propertyLat != null && propertyLon != null
+                    && comparableLat != null && comparableLon != null) {
                 distanceMiles = DistanceCalculator.calculateMiles(
-                        propertyLat,
-                        propertyLon,
-                        comparableLat,
-                        comparableLon
+                        propertyLat, propertyLon, comparableLat, comparableLon
                 );
             }
 
             // Create entity
-            ComparableListing comparableListing =
-                    ComparableListing.builder()
-                            .comparableAddress(comparableAddress)
-                            .price(price)
-                            .squareFeet(squareFeet)
-                            .distanceMiles(distanceMiles)
-                            .listedDate(listedDate)
-                            .source(source)
-                            .property(property)
-                            .build();
+            ComparableListing comparableListing = ComparableListing.builder()
+                    .comparableAddress(comparableAddress)
+                    .price(price)
+                    .squareFeet(squareFeet)
+                    .distanceMiles(distanceMiles)
+                    .listedDate(listedDate)
+                    .source(source)
+                    .property(property)
+                    .build();
 
             comparables.add(comparableListing);
         }
@@ -186,147 +158,51 @@ public class ComparableListingService {
         );
     }
 
-    private String buildAddress(
-            RapidApiListingResponse.Listing listing) {
-
-        if (listing.getLocation() == null
-                || listing.getLocation().getAddress() == null) {
+    private String buildAddressFromJson(tools.jackson.databind.JsonNode listing) {
+        tools.jackson.databind.JsonNode addrNode = listing.path("location").path("address");
+        if (addrNode == null || addrNode.isMissingNode()) {
             return "Address unavailable";
         }
 
-        RapidApiListingResponse.Address address =
-                listing.getLocation().getAddress();
+        String line = addrNode.hasNonNull("line") ? addrNode.get("line").asText().trim() : "";
+        String city = addrNode.hasNonNull("city") ? addrNode.get("city").asText().trim() : "";
+        String state = addrNode.hasNonNull("state_code") ? addrNode.get("state_code").asText().trim() : "";
+        String postal = addrNode.hasNonNull("postal_code") ? addrNode.get("postal_code").asText().trim() : "";
 
         StringBuilder result = new StringBuilder();
-
-        if (address.getLine() != null
-                && !address.getLine().isBlank()) {
-            result.append(address.getLine());
+        if (!line.isEmpty()) {
+            result.append(line);
+        }
+        if (!city.isEmpty()) {
+            if (result.length() > 0) result.append(", ");
+            result.append(city);
+        }
+        if (!state.isEmpty()) {
+            if (result.length() > 0) result.append(", ");
+            result.append(state);
+        }
+        if (!postal.isEmpty()) {
+            if (result.length() > 0) result.append(" ");
+            result.append(postal);
         }
 
-        if (address.getCity() != null
-                && !address.getCity().isBlank()) {
-
-            if (result.length() > 0) {
-                result.append(", ");
-            }
-
-            result.append(address.getCity());
-        }
-
-        if (address.getStateCode() != null
-                && !address.getStateCode().isBlank()) {
-
-            if (result.length() > 0) {
-                result.append(", ");
-            }
-
-            result.append(address.getStateCode());
-        }
-
-        if (address.getPostalCode() != null
-                && !address.getPostalCode().isBlank()) {
-
-            if (result.length() > 0) {
-                result.append(" ");
-            }
-
-            result.append(address.getPostalCode());
-        }
-
-        if (result.length() == 0) {
-            return "Address unavailable";
-        }
-
-        return result.toString();
+        return result.length() > 0 ? result.toString() : "Address unavailable";
     }
+
     private String buildSearchLocation(String address) {
         if (address == null || address.isBlank()) {
-            throw new RuntimeException("Property address is missing");
+            return null;
         }
 
-        String[] parts = address.split(",");
-
-        // Check if address ends with "United States" or "USA"
-        if (parts.length >= 2 && parts[parts.length - 1].trim().equalsIgnoreCase("United States")) {
-            String city = parts[0].trim();
-            String stateCandidate = parts[parts.length - 2].trim();
-            String stateCode = normalizeUsState(stateCandidate);
-            if (stateCode != null) {
-                return "city:" + city + ", " + stateCode;
+        AddressParser parser = AddressParser.parse(address);
+        if (parser.isUsAddress()) {
+            if (!parser.getCity().isBlank() && !parser.getState().isBlank()) {
+                return parser.getCity() + ", " + parser.getState();
             }
-            return "city:" + city + ", " + stateCandidate;
+            if (!parser.getZip().isBlank()) {
+                return parser.getZip();
+            }
         }
-
-        if (parts.length >= 3) {
-            String city = parts[parts.length - 2].trim();
-            String stateZip = parts[parts.length - 1].trim();
-
-            String state = stateZip.split("\\s+")[0].trim();
-
-            return "city:" + city + ", " + state;
-        }
-
-        return address.trim();
-    }
-
-    private static String normalizeUsState(String stateName) {
-        if (stateName == null) return null;
-        String s = stateName.trim();
-        if (s.length() == 2) return s.toUpperCase();
-        return switch (s.toLowerCase()) {
-            case "alabama" -> "AL";
-            case "alaska" -> "AK";
-            case "arizona" -> "AZ";
-            case "arkansas" -> "AR";
-            case "california" -> "CA";
-            case "colorado" -> "CO";
-            case "connecticut" -> "CT";
-            case "delaware" -> "DE";
-            case "florida" -> "FL";
-            case "georgia" -> "GA";
-            case "hawaii" -> "HI";
-            case "idaho" -> "ID";
-            case "illinois" -> "IL";
-            case "indiana" -> "IN";
-            case "iowa" -> "IA";
-            case "kansas" -> "KS";
-            case "kentucky" -> "KY";
-            case "louisiana" -> "LA";
-            case "maine" -> "ME";
-            case "maryland" -> "MD";
-            case "massachusetts" -> "MA";
-            case "michigan" -> "MI";
-            case "minnesota" -> "MN";
-            case "mississippi" -> "MS";
-            case "missouri" -> "MO";
-            case "montana" -> "MT";
-            case "nebraska" -> "NE";
-            case "nevada" -> "NV";
-            case "new hampshire" -> "NH";
-            case "new jersey" -> "NJ";
-            case "new mexico" -> "NM";
-            case "new york" -> "NY";
-            case "north carolina" -> "NC";
-            case "north dakota" -> "ND";
-            case "ohio" -> "OH";
-            case "oklahoma" -> "OK";
-            case "oregon" -> "OR";
-            case "pennsylvania" -> "PA";
-            case "rhode island" -> "RI";
-            case "south carolina" -> "SC";
-            case "south dakota" -> "SD";
-            case "tennessee" -> "TN";
-            case "texas" -> "TX";
-            case "utah" -> "UT";
-            case "vermont" -> "VT";
-            case "virginia" -> "VA";
-            case "washington" -> "WA";
-            case "west virginia" -> "WV";
-            case "wisconsin" -> "WI";
-            case "wyoming" -> "WY";
-            case "district of columbia" -> "DC";
-            default -> null;
-        };
+        return address;
     }
 }
