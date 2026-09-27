@@ -96,6 +96,7 @@ export default function Navbar() {
   const navLinks = role === "ADMINISTRATOR"
     ? [
         { name: "Admin Dashboard", href: "/admin/dashboard" },
+        { name: "Audit Logs", href: "/admin/dashboard#audit-logs" },
         ...baseNavLinks,
       ]
     : baseNavLinks;
@@ -103,6 +104,9 @@ export default function Navbar() {
   function isActive(href: string) {
     if (href === "/dashboard" || href === "/admin/dashboard") {
       return pathname === href;
+    }
+    if (href.startsWith("/admin/dashboard#")) {
+      return false;
     }
     return pathname.startsWith(href);
   }

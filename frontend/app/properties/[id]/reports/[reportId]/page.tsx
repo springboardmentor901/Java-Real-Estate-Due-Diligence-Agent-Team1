@@ -9,6 +9,7 @@ import AuthGuard from "@/components/AuthGuard";
 
 interface Report {
   id: number;
+  propertyId?: number | null;
   riskScore: number | null;
   executiveSummary: string | null;
   propertyTimeline: string | null;
@@ -45,13 +46,25 @@ export default function ReportPage() {
     }
 
     try {
-      const data = await apiRequest<Report>(
-        `/api/properties/${propertyId}/reports/${reportId}`,
-        {
-          method: "GET",
-          token,
-        }
-      );
+      let data: Report;
+      if (propertyId && propertyId !== "undefined") {
+        data = await apiRequest<Report>(
+          `/api/properties/${propertyId}/reports/${reportId}`,
+          {
+            method: "GET",
+            token,
+          }
+        );
+      } else {
+        // Fallback: If propertyId was undefined in URL, query the report detail endpoint
+        data = await apiRequest<Report>(
+          `/api/reports/${reportId}`,
+          {
+            method: "GET",
+            token,
+          }
+        );
+      }
 
       setReport(data);
 
@@ -80,6 +93,9 @@ export default function ReportPage() {
   };
 
   useEffect(() => {
+    if (!reportId || reportId === "undefined") {
+      return;
+    }
     loadReport();
   }, [propertyId, reportId]);
 
@@ -108,10 +124,27 @@ export default function ReportPage() {
       return;
     }
 
+    const effectivePropId =
+      propertyId && propertyId !== "undefined"
+        ? propertyId
+        : report?.propertyId;
+
+    if (
+      !effectivePropId ||
+      !reportId ||
+      effectivePropId === "undefined" ||
+      reportId === "undefined"
+    ) {
+      setError(
+        `Failed to download ${type.toUpperCase()}: Property or report identifier is missing.`
+      );
+      return;
+    }
+
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
       const response = await fetch(
-        `${apiUrl}/api/properties/${propertyId}/reports/${reportId}/${type}`,
+        `${apiUrl}/api/properties/${effectivePropId}/reports/${reportId}/${type}`,
         {
           method: "GET",
           headers: {

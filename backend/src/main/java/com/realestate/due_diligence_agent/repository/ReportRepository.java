@@ -1,5 +1,6 @@
 package com.realestate.due_diligence_agent.repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -10,4 +11,5 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
 
     List<Report> findByRequestedById(Long userId);
 
+    long countByCreatedAtAfter(LocalDateTime dateTime);
 }

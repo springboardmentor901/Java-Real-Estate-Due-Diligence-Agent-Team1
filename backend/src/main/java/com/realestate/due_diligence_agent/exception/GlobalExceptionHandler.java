@@ -5,25 +5,27 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
     @ExceptionHandler(ExternalApiException.class)
-public ResponseEntity<Map<String, Object>> handleExternalApiException(
-        ExternalApiException exception) {
+    public ResponseEntity<Map<String, Object>> handleExternalApiException(
+            ExternalApiException exception) {
 
-    Map<String, Object> response = new HashMap<>();
+        Map<String, Object> response = new HashMap<>();
 
-    response.put("status", HttpStatus.BAD_GATEWAY.value());
-    response.put("error", "Bad Gateway");
-    response.put("message", exception.getMessage());
+        response.put("status", HttpStatus.BAD_GATEWAY.value());
+        response.put("error", "Bad Gateway");
+        response.put("message", exception.getMessage());
 
-    return ResponseEntity
-            .status(HttpStatus.BAD_GATEWAY)
-            .body(response);
-}
+        return ResponseEntity
+                .status(HttpStatus.BAD_GATEWAY)
+                .body(response);
+    }
 
     // Property not found → 404 Not Found
     @ExceptionHandler(PropertyNotFoundException.class)
@@ -38,6 +40,22 @@ public ResponseEntity<Map<String, Object>> handleExternalApiException(
 
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
+                .body(response);
+    }
+
+    // Spring Security Access Denied → 403 Forbidden
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(
+            AccessDeniedException exception) {
+
+        Map<String, Object> response = new HashMap<>();
+
+        response.put("status", HttpStatus.FORBIDDEN.value());
+        response.put("error", "Forbidden");
+        response.put("message", "Access denied: insufficient privileges.");
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
                 .body(response);
     }
 

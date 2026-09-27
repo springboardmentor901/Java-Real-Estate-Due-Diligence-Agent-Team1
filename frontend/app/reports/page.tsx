@@ -130,8 +130,35 @@ export default function ReportsHistoryPage() {
     loadReportHistory();
   }, [router]);
 
+  async function handleViewReport(report: EnrichedReport) {
+    setDownloadError("");
+    let propId = report.propertyId;
+    if (!propId || Number.isNaN(Number(propId))) {
+      const token = getToken();
+      if (token) {
+        try {
+          const detail = await apiRequest<{ propertyId: number }>(
+            `/api/reports/${report.id}`,
+            { token }
+          );
+          propId = detail.propertyId;
+        } catch {
+          // If query fails, propId remains unresolved
+        }
+      }
+    }
+
+    if (propId && !Number.isNaN(Number(propId))) {
+      router.push(`/properties/${propId}/reports/${report.id}`);
+    } else {
+      setDownloadError(
+        `Unable to view report: Property identifier could not be determined for report #${report.id}.`
+      );
+    }
+  }
+
   async function downloadReportFile(
-    propertyId: number,
+    propertyId: number | null | undefined,
     reportId: number,
     type: "pdf" | "excel"
   ) {
@@ -147,9 +174,29 @@ export default function ReportsHistoryPage() {
     setDownloadError("");
 
     try {
+      let resolvedPropertyId = propertyId;
+      if (!resolvedPropertyId || Number.isNaN(Number(resolvedPropertyId))) {
+        // Fallback: Query report detail endpoint to obtain the propertyId
+        try {
+          const detail = await apiRequest<{ propertyId: number }>(
+            `/api/reports/${reportId}`,
+            { token }
+          );
+          resolvedPropertyId = detail.propertyId;
+        } catch {
+          // Keep unresolved
+        }
+      }
+
+      if (!resolvedPropertyId || Number.isNaN(Number(resolvedPropertyId))) {
+        throw new Error(
+          `Cannot download ${type.toUpperCase()}: Property ID could not be found for report #${reportId}.`
+        );
+      }
+
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
       const response = await fetch(
-        `${apiUrl}/api/properties/${propertyId}/reports/${reportId}/${type}`,
+        `${apiUrl}/api/properties/${resolvedPropertyId}/reports/${reportId}/${type}`,
         {
           method: "GET",
           headers: {
@@ -370,25 +417,19 @@ export default function ReportsHistoryPage() {
                         </td>
                         <td className="px-6 py-4 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-2">
-                            {report.propertyId && (
-                              <button
-                                onClick={() =>
-                                  router.push(
-                                    `/properties/${report.propertyId}/reports/${report.id}`
-                                  )
-                                }
-                                className="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
-                              >
-                                View Report
-                              </button>
-                            )}
+                            <button
+                              onClick={() => handleViewReport(report)}
+                              className="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+                            >
+                              View Report
+                            </button>
 
-                            {report.status === "COMPLETED" && report.propertyId && (
+                            {report.status === "COMPLETED" && (
                               <>
                                 <button
                                   onClick={() =>
                                     downloadReportFile(
-                                      report.propertyId!,
+                                      report.propertyId,
                                       report.id,
                                       "pdf"
                                     )
@@ -407,7 +448,7 @@ export default function ReportsHistoryPage() {
                                 <button
                                   onClick={() =>
                                     downloadReportFile(
-                                      report.propertyId!,
+                                      report.propertyId,
                                       report.id,
                                       "excel"
                                     )

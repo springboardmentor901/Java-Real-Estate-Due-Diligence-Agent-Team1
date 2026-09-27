@@ -1,5 +1,11 @@
 package com.realestate.due_diligence_agent.controller;
 
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.realestate.due_diligence_agent.dto.AuthResponse;
 import com.realestate.due_diligence_agent.dto.LoginRequest;
 import com.realestate.due_diligence_agent.dto.RegisterRequest;
@@ -8,9 +14,6 @@ import com.realestate.due_diligence_agent.service.AuthService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/auth")
